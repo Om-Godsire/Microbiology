@@ -1,0 +1,30 @@
+{
+  "id": "reference-plate-001-nodes",
+  "sourceImage": "../images/reference-plate-001-marked.png",
+  "imageSize": { "width": 701, "height": 946 },
+  "calibration": {
+    "plateDiameterMm": 100,
+    "plateDiameterCm": 10,
+    "method": "known_standard_petri_dish_diameter",
+    "warning": "Use the visible usable dish boundary, not the rectangular image bounds. Perspective correction is required before applying this scale."
+  },
+  "measurementTarget": "diameter_of_red_marked_inhibition_patch_around_each_node",
+  "nodeRule": "Detect outer antibiotic nodes, trace the connecting strip inward to its label at the base, and assign the measured patch to that label. Do not measure the large carrier ring.",
+  "nodes": [
+    { "id": 1, "label": "CIP", "redCircleCenterPx": [108, 260], "redCircleRadiusPxApprox": 91, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 2, "label": "AZM", "redCircleCenterPx": [260, 132], "redCircleRadiusPxApprox": 78, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 3, "label": "LZ", "redCircleCenterPx": [458, 158], "redCircleRadiusPxApprox": 78, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 4, "label": "CFS", "redCircleCenterPx": [594, 301], "redCircleRadiusPxApprox": 91, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 5, "label": "AMC", "redCircleCenterPx": [594, 498], "redCircleRadiusPxApprox": 77, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 6, "label": "VA", "redCircleCenterPx": [444, 617], "redCircleRadiusPxApprox": 78, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 7, "label": "A/S", "redCircleCenterPx": [263, 604], "redCircleRadiusPxApprox": 83, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 8, "label": "NIT", "redCircleCenterPx": [100, 481], "redCircleRadiusPxApprox": 76, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 9, "label": "IE", "redCircleCenterPx": [381, 316], "redCircleRadiusPxApprox": 75, "markedDiameterMm": null, "labelSource": "text_at_strip_base" },
+    { "id": 10, "label": "CD", "redCircleCenterPx": [319, 398], "redCircleRadiusPxApprox": 58, "markedDiameterMm": null, "labelSource": "text_at_strip_base" }
+  ],
+  "excludedRegions": [
+    { "type": "carrier_ring", "rule": "Never report the broad grey circular ring as a zone." },
+    { "type": "red_annotation", "rule": "Red circles are annotation guides only and must not be treated as biological boundaries." }
+  ],
+  "status": "node-centers-and-labels-annotated; exact-red-circle-pixel-diameters-pending"
+}

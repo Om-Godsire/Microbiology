@@ -16,6 +16,7 @@ A camera-first microbiology laboratory workflow prototype for measuring antibiot
 - Explicitly measurement-only: it does not diagnose, prescribe, or classify susceptibility
 - Supplied reference-plate ground truth fixture in `data/reference-plate-001.measurements.json`
 - Supplied reference image and spatial annotation fixture in `data/images/` and `data/annotations/`
+- Standard Petri-dish calibration is configured as 100 mm / 10 cm; antibiotic identity remains a separate OCR or laboratory-layout task
 
 ## Run locally
 

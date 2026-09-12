@@ -16,6 +16,7 @@ const demoDiscs = [
   { antibiotic:'IE', zone:24, confidence:.90, x:48, y:46, r:7 },
   { antibiotic:'CD', zone:14, confidence:.89, x:58, y:60, r:7 },
 ]
+const PETRI_DISH_DIAMETER_MM = 100
 
 function analyzePlate({ measurementMode='full_zone_diameter', pixelsPerMm=4.8 }={}) {
   const discs = demoDiscs.map((d, index) => {
@@ -47,7 +48,7 @@ function inspectLiveFrame(video, canvas) {
   return { present, quality:present?'Plate region detected':'Center the plate in the guide', brightness:Math.round(brightness), stability:Math.min(100, Math.round(texture*2.2)) }
 }
 
-function analyzeCapturedFrame(source, { measurementMode='full_zone_diameter', knownDiscDiameterMm=6 }={}) {
+function analyzeCapturedFrame(source, { measurementMode='full_zone_diameter', plateDiameterMm=PETRI_DISH_DIAMETER_MM }={}) {
   const sourceWidth=source?.videoWidth || source?.naturalWidth, sourceHeight=source?.videoHeight || source?.naturalHeight
   if (!source || !sourceWidth || !sourceHeight) return { ok:false, message:'No captured frame is available.' }
   const canvas=document.createElement('canvas'); const width=320; const height=Math.max(180, Math.round(sourceHeight/sourceWidth*width)); canvas.width=width; canvas.height=height
@@ -65,11 +66,11 @@ function analyzeCapturedFrame(source, { measurementMode='full_zone_diameter', kn
   candidates.sort((a,b)=>b.contrast-a.contrast); const discs=[]
   for(const c of candidates){ if(discs.some(d=>Math.hypot(d.x-c.x,d.y-c.y)<18)) continue; discs.push(c); if(discs.length>=12) break }
   if(discs.length===0) return { ok:false, message:'Petri dish detected, but no antibiotic discs were confidently detected.' }
-  const discPx=12; const pixelsPerMm=discPx/knownDiscDiameterMm
+  const discPx=Math.max(7,edgeRadius*.035); const pixelsPerMm=(edgeRadius*2)/plateDiameterMm
   const measured=discs.map((d,index)=>{ let bestR=discPx*1.4; let bestDrop=0; for(let r=discPx*1.4;r<Math.min(edgeRadius*.32,discPx*5);r+=2){ let ring=0,n=0; for(let a=0;a<Math.PI*2;a+=Math.PI/18){ const x=Math.max(0,Math.min(width-1,Math.round(d.x+Math.cos(a)*r))),y=Math.max(0,Math.min(height-1,Math.round(d.y+Math.sin(a)*r))); ring+=gray[y*width+x];n++ } const next=ring/n; if(next>bestDrop){bestDrop=next;bestR=r} } const diameterMm=(measurementMode==='clear_zone_outside_disc' ? Math.max(0,(bestR*2-discPx)/pixelsPerMm) : bestR*2/pixelsPerMm); const confidence=Math.max(.35,Math.min(.9,d.contrast/80)); return {id:index+1,antibiotic:'UNKNOWN',zoneDiameterMm:Number(diameterMm.toFixed(1)),zoneRadiusMm:Number((diameterMm/2).toFixed(1)),discRadiusPx:discPx/2,zoneRadiusPx:bestR,discCenter:[d.x,d.y],x:d.x/width*100,y:d.y/height*100,confidence,reviewRequired:true,corrected:false} })
   const plausible=measured.filter(d=>d.confidence>=.65 && d.zoneRadiusPx>=discPx*1.25 && d.zoneRadiusPx<=discPx*3.5)
   if (plausible.length<3) return { ok:false, message:'Plate-like region found, but disc and inhibition-zone boundaries are not reliable enough to measure. Use diffuse lighting, a top-down view, and a closer image.' }
-  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:plausible, calibration:{method:'configured_reference_disc',knownDiscDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${sourceWidth} × ${sourceHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline' }
+  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:plausible, calibration:{method:'known_standard_petri_dish_diameter',plateDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${sourceWidth} × ${sourceHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline', identityStatus:'OCR_or_configured_layout_required' }
 }
 
 function App() {
