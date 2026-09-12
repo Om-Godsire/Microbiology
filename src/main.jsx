@@ -47,10 +47,11 @@ function inspectLiveFrame(video, canvas) {
   return { present, quality:present?'Plate region detected':'Center the plate in the guide', brightness:Math.round(brightness), stability:Math.min(100, Math.round(texture*2.2)) }
 }
 
-function analyzeCapturedFrame(video, { measurementMode='full_zone_diameter', knownDiscDiameterMm=6 }={}) {
-  if (!video || video.readyState < 2 || !video.videoWidth) return { ok:false, message:'No captured frame is available.' }
-  const canvas=document.createElement('canvas'); const width=320; const height=Math.max(180, Math.round(video.videoHeight/video.videoWidth*width)); canvas.width=width; canvas.height=height
-  const ctx=canvas.getContext('2d', { willReadFrequently:true }); ctx.drawImage(video,0,0,width,height)
+function analyzeCapturedFrame(source, { measurementMode='full_zone_diameter', knownDiscDiameterMm=6 }={}) {
+  const sourceWidth=source?.videoWidth || source?.naturalWidth, sourceHeight=source?.videoHeight || source?.naturalHeight
+  if (!source || !sourceWidth || !sourceHeight) return { ok:false, message:'No captured frame is available.' }
+  const canvas=document.createElement('canvas'); const width=320; const height=Math.max(180, Math.round(sourceHeight/sourceWidth*width)); canvas.width=width; canvas.height=height
+  const ctx=canvas.getContext('2d', { willReadFrequently:true }); ctx.drawImage(source,0,0,width,height)
   const data=ctx.getImageData(0,0,width,height).data; const gray=new Float32Array(width*height)
   let mean=0
   for(let y=0;y<height;y++) for(let x=0;x<width;x++){ const i=(y*width+x)*4; const l=data[i]*.299+data[i+1]*.587+data[i+2]*.114; gray[y*width+x]=l; mean+=l }
@@ -66,7 +67,7 @@ function analyzeCapturedFrame(video, { measurementMode='full_zone_diameter', kno
   if(discs.length===0) return { ok:false, message:'Petri dish detected, but no antibiotic discs were confidently detected.' }
   const discPx=12; const pixelsPerMm=discPx/knownDiscDiameterMm
   const measured=discs.map((d,index)=>{ let bestR=discPx*1.4; let bestDrop=0; for(let r=discPx*1.4;r<Math.min(edgeRadius*.32,discPx*5);r+=2){ let ring=0,n=0; for(let a=0;a<Math.PI*2;a+=Math.PI/18){ const x=Math.max(0,Math.min(width-1,Math.round(d.x+Math.cos(a)*r))),y=Math.max(0,Math.min(height-1,Math.round(d.y+Math.sin(a)*r))); ring+=gray[y*width+x];n++ } const next=ring/n; if(next>bestDrop){bestDrop=next;bestR=r} } const diameterMm=(measurementMode==='clear_zone_outside_disc' ? Math.max(0,(bestR*2-discPx)/pixelsPerMm) : bestR*2/pixelsPerMm); const confidence=Math.max(.35,Math.min(.9,d.contrast/80)); return {id:index+1,antibiotic:'UNKNOWN',zoneDiameterMm:Number(diameterMm.toFixed(1)),zoneRadiusMm:Number((diameterMm/2).toFixed(1)),discRadiusPx:discPx/2,zoneRadiusPx:bestR,discCenter:[d.x,d.y],x:d.x/width*100,y:d.y/height*100,confidence,reviewRequired:true,corrected:false} })
-  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:measured, calibration:{method:'configured_reference_disc',knownDiscDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${video.videoWidth} × ${video.videoHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline' }
+  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:measured, calibration:{method:'configured_reference_disc',knownDiscDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${sourceWidth} × ${sourceHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline' }
 }
 
 function App() {
@@ -75,6 +76,7 @@ function App() {
   const [sampleId, setSampleId] = useState('')
   const [results, setResults] = useState(getSaved)
   const [cameraOn, setCameraOn] = useState(false)
+  const [imageSrc, setImageSrc] = useState('')
   const [cameraError, setCameraError] = useState('')
   const [measurementMode, setMeasurementMode] = useState('full_zone_diameter')
   const [showSettings, setShowSettings] = useState(false)
@@ -82,6 +84,8 @@ function App() {
   const [captureCount, setCaptureCount] = useState(getCaptureCount)
   const [captureNotice, setCaptureNotice] = useState('')
   const videoRef = useRef(null)
+  const imageRef = useRef(null)
+  const fileRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const timerRef = useRef(null)
@@ -118,6 +122,12 @@ function App() {
   }
   const stopCamera = () => { streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current=null; setCameraOn(false) }
 
+  const uploadReference = (event) => {
+    const file=event.target.files?.[0]; if(!file) return
+    if(!file.type.startsWith('image/')) { setCameraError('Please choose a PNG or JPEG image.'); return }
+    stopCamera(); setCameraError(''); setResult(null); setCaptureNotice('Reference image loaded. Use Analyze image to run the real pixel pipeline.'); setImageSrc(URL.createObjectURL(file)); setState(STATES.READY)
+  }
+
   const captureReferenceFrame = () => {
     const video = videoRef.current
     if (!video || video.readyState < 2 || !video.videoWidth) { setCameraError('No live frame is available yet. Keep the camera active and try again.'); return false }
@@ -135,6 +145,7 @@ function App() {
   const runScan = (automatic=false) => {
     if (isBusy || state===STATES.ID) return
     if (cameraOn) { captureReferenceFrame(); return }
+    if (imageSrc) { setResult(null); setState(STATES.DETECTED); timerRef.current=setTimeout(()=>{setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{const analysis=analyzeCapturedFrame(imageRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setCaptureNotice(analysis.message);setState(STATES.READY)}},900)},500); return }
     setResult(null); setState(STATES.DETECTED)
     timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ const analysis=analyzeCapturedFrame(videoRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setCaptureNotice(analysis.message);setState(STATES.READY)} }, 900) }, 750) }, 500)
   }
@@ -160,14 +171,14 @@ function App() {
         <div className="scanner-panel">
           <div className="panel-heading"><div><span className="panel-kicker">LIVE FEED</span><h2>Camera preview</h2></div><div className="camera-actions"><span className={`camera-state ${cameraOn?'active':''}`}><span/> {cameraOn?'CAMERA ACTIVE':'DEMO MODE'}</span><button className="small-btn" onClick={cameraOn?stopCamera:startCamera}><Camera size={15}/>{cameraOn?'Stop camera':'Enable camera'}</button></div></div>
           <div className="viewfinder" onClick={runScan}>
-            <video ref={videoRef} autoPlay muted playsInline className={cameraOn?'video-visible':''}/><div className="feed-placeholder"><div className="grid-lines"/><div className="dish-guide"><div className="guide-ring"/><span>PLACE PETRI DISH<br/><small>inside the guide</small></span></div></div>
+            <video ref={videoRef} autoPlay muted playsInline className={cameraOn?'video-visible':''}/>{imageSrc && <img ref={imageRef} src={imageSrc} className="uploaded-image" alt="Uploaded Petri dish reference"/>}<div className="feed-placeholder"><div className="grid-lines"/><div className="dish-guide"><div className="guide-ring"/><span>{imageSrc?'REFERENCE IMAGE LOADED':'PLACE PETRI DISH'}<br/><small>{imageSrc?'ready for analysis':'inside the guide'}</small></span></div></div>
             <div className="corner tl"/><div className="corner tr"/><div className="corner bl"/><div className="corner br"/>
             {result && <div className="overlay-plate"><div className="overlay-circle"/>{result.discs.map(d=><div key={d.id} className="disc-overlay" style={{left:`${d.x}%`,top:`${d.y}%`}}><span>{d.zoneDiameterMm} mm</span></div>)}</div>}
             <canvas ref={canvasRef} className="analysis-canvas"/><div className="feed-caption"><span><Maximize2 size={13}/> 1280 × 720</span><span><Activity size={13}/> 24 FPS</span></div>
           </div>
           {cameraError && <div className="notice warning"><X size={15}/>{cameraError}</div>}
           <div className="status-strip"><div className="status-icon"><Activity size={18}/></div><div><span className="status-label">SCANNER STATUS</span><strong>{status}</strong><small className="live-quality">{cameraOn ? `${liveMetrics.quality} · stability ${liveMetrics.stability}%` : 'Demo mode · manual trigger available'}</small></div><div className="status-time">{isBusy ? 'PROCESSING' : state===STATES.READY?'READY':'ACTION REQUIRED'}</div></div>
-          <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={()=>runScan(false)}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> {cameraOn?'Capture reference frame':'Run demo measurement'}</>}</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
+          <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={()=>runScan(false)}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> {cameraOn?'Capture reference frame':imageSrc?'Analyze image':'Run demo measurement'}</>}</button><input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={uploadReference} hidden/><button className="ghost-btn" onClick={()=>fileRef.current?.click()}><Database size={15}/> Upload image</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
         </div>
         <aside className="side-panel">
           <div className="side-heading"><div><span className="panel-kicker">ANALYSIS OUTPUT</span><h2>Latest result</h2></div><span className={`confidence-badge ${result?.valid?'good':''}`}>{result ? `${result.discs.length} ZONES` : 'WAITING'}</span></div>
