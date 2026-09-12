@@ -15,6 +15,7 @@ A camera-first microbiology laboratory workflow prototype for measuring antibiot
 - Recent local results list and synchronization status placeholder
 - Explicitly measurement-only: it does not diagnose, prescribe, or classify susceptibility
 - Supplied reference-plate ground truth fixture in `data/reference-plate-001.measurements.json`
+- Supplied reference image and spatial annotation fixture in `data/images/` and `data/annotations/`
 
 ## Run locally
 
@@ -41,6 +42,16 @@ The current prototype keeps the shared analysis model separate from the UI so th
 3. Add a focused manual review canvas for low-confidence zones.
 4. Add native camera adapters for Android/iOS/desktop UVC cameras.
 5. Validate calibration, accuracy, repeatability, and performance under laboratory conditions before operational use.
+
+## Measurement evaluation
+
+The supplied reference plate has operator-provided full patch diameters and approximate disc-center annotations. Score a prediction JSON against it with:
+
+```bash
+python3 scripts/evaluate_measurements.py data/reference-plate-001.measurements.json predictions.json
+```
+
+The first acceptance threshold is an initial absolute tolerance of ±2 mm. The spatial annotation explicitly marks the patch boundaries as pending precise manual annotation; approximate disc centers must not be treated as pixel-perfect ground truth.
 
 ## Safety boundary
 

@@ -1,0 +1,44 @@
+{
+  "id": "reference-plate-001",
+  "image": "../images/reference-plate-001.png",
+  "imageSize": { "width": 1400, "height": 1600 },
+  "annotationStatus": "manual-centers-and-labels; patch-boundaries-pending",
+  "coordinateSystem": "pixel coordinates with origin at top-left",
+  "plate": {
+    "shape": "perspective_ellipse",
+    "centerPx": [700, 800],
+    "ellipseRadiusPxApprox": [675, 755],
+    "confidence": 0.78
+  },
+  "qualityFlags": [
+    "uneven_yellow_lighting",
+    "top_glare",
+    "plastic_reflection",
+    "perspective_tilt",
+    "hand_occlusion_upper_left",
+    "printed_carrier_strips",
+    "low_zone_contrast_in_some_regions"
+  ],
+  "measurementTarget": "full_patch_diameter",
+  "patchBoundaryAnnotation": {
+    "status": "pending_precise_manual_boundary",
+    "samplingPlan": "sample boundary at >= 36 radial angles per disc; preserve irregular boundaries"
+  },
+  "discs": [
+    { "label": "MRP", "centerPx": [302, 355], "diameterMm": 30, "inhibitionPatchMm": 30, "identitySource": "operator-supplied" },
+    { "label": "AZM", "centerPx": [764, 214], "diameterMm": 28, "inhibitionPatchMm": 28, "identitySource": "operator-supplied" },
+    { "label": "LZ",  "centerPx": [1160, 466], "diameterMm": 0,  "inhibitionPatchMm": 0,  "identitySource": "operator-supplied" },
+    { "label": "IPM", "centerPx": [1280, 878], "diameterMm": 24, "inhibitionPatchMm": 24, "identitySource": "operator-supplied" },
+    { "label": "AMC", "centerPx": [1051, 1248], "diameterMm": 0,  "inhibitionPatchMm": 0,  "identitySource": "operator-supplied" },
+    { "label": "VA",  "centerPx": [710, 1412], "diameterMm": 0,  "inhibitionPatchMm": 0,  "identitySource": "operator-supplied" },
+    { "label": "A/S", "centerPx": [298, 1262], "diameterMm": 22, "inhibitionPatchMm": 22, "identitySource": "operator-supplied" },
+    { "label": "NIT", "centerPx": [106, 784], "diameterMm": 18, "inhibitionPatchMm": 18, "identitySource": "operator-supplied" },
+    { "label": "IE",  "centerPx": [625, 758], "diameterMm": 24, "inhibitionPatchMm": 24, "identitySource": "operator-supplied" },
+    { "label": "CD",  "centerPx": [758, 953], "diameterMm": 14, "inhibitionPatchMm": 14, "identitySource": "operator-supplied" }
+  ],
+  "nonDiscRegions": [
+    { "type": "printed_carrier_strip", "note": "Do not classify the broad grey circular carrier band as an inhibition patch." },
+    { "type": "glare", "region": "top_center" },
+    { "type": "occlusion", "region": "upper_left_hand" }
+  ]
+}
