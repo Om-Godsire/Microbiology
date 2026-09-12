@@ -43,6 +43,28 @@ function inspectLiveFrame(video, canvas) {
   return { present, quality:present?'Plate region detected':'Center the plate in the guide', brightness:Math.round(brightness), stability:Math.min(100, Math.round(texture*2.2)) }
 }
 
+function analyzeCapturedFrame(video, { measurementMode='full_zone_diameter', knownDiscDiameterMm=6 }={}) {
+  if (!video || video.readyState < 2 || !video.videoWidth) return { ok:false, message:'No captured frame is available.' }
+  const canvas=document.createElement('canvas'); const width=320; const height=Math.max(180, Math.round(video.videoHeight/video.videoWidth*width)); canvas.width=width; canvas.height=height
+  const ctx=canvas.getContext('2d', { willReadFrequently:true }); ctx.drawImage(video,0,0,width,height)
+  const data=ctx.getImageData(0,0,width,height).data; const gray=new Float32Array(width*height)
+  let mean=0
+  for(let y=0;y<height;y++) for(let x=0;x<width;x++){ const i=(y*width+x)*4; const l=data[i]*.299+data[i+1]*.587+data[i+2]*.114; gray[y*width+x]=l; mean+=l }
+  mean/=gray.length
+  // Candidate plate: choose the strongest local contrast circle around the image center.
+  const cx=width/2, cy=height/2; const maxR=Math.min(width,height)*.46; let edgeScore=0, edgeRadius=maxR
+  for(let r=maxR*.55;r<=maxR;r+=4){ let inner=0,outer=0,count=0; for(let a=0;a<Math.PI*2;a+=Math.PI/24){ const x=Math.round(cx+Math.cos(a)*r), y=Math.round(cy+Math.sin(a)*r); const ix=Math.max(0,Math.min(width-1,x)), iy=Math.max(0,Math.min(height-1,y)); const ox=Math.max(0,Math.min(width-1,Math.round(cx+Math.cos(a)*(r-7)))), oy=Math.max(0,Math.min(height-1,Math.round(cy+Math.sin(a)*(r-7)))); inner+=gray[iy*width+ix]; outer+=gray[oy*width+ox]; count++ } const score=Math.abs(inner/count-outer/count); if(score>edgeScore){edgeScore=score;edgeRadius=r} }
+  if(edgeScore<3) return { ok:false, message:'No clear Petri dish boundary detected. Improve lighting and center the plate.' }
+  const candidates=[]
+  for(let y=12;y<height-12;y+=3) for(let x=12;x<width-12;x+=3){ const dx=x-cx,dy=y-cy; if(Math.hypot(dx,dy)>edgeRadius*.84) continue; const center=gray[y*width+x]; let ring=0,n=0; for(let a=0;a<Math.PI*2;a+=Math.PI/6){ring+=gray[Math.round(y+Math.sin(a)*7)*width+Math.round(x+Math.cos(a)*7)];n++} const contrast=ring/n-center; if(contrast>18) candidates.push({x,y,contrast}) }
+  candidates.sort((a,b)=>b.contrast-a.contrast); const discs=[]
+  for(const c of candidates){ if(discs.some(d=>Math.hypot(d.x-c.x,d.y-c.y)<18)) continue; discs.push(c); if(discs.length>=12) break }
+  if(discs.length===0) return { ok:false, message:'Petri dish detected, but no antibiotic discs were confidently detected.' }
+  const discPx=12; const pixelsPerMm=discPx/knownDiscDiameterMm
+  const measured=discs.map((d,index)=>{ let bestR=discPx*1.4; let bestDrop=0; for(let r=discPx*1.4;r<Math.min(edgeRadius*.32,discPx*5);r+=2){ let ring=0,n=0; for(let a=0;a<Math.PI*2;a+=Math.PI/18){ const x=Math.max(0,Math.min(width-1,Math.round(d.x+Math.cos(a)*r))),y=Math.max(0,Math.min(height-1,Math.round(d.y+Math.sin(a)*r))); ring+=gray[y*width+x];n++ } const next=ring/n; if(next>bestDrop){bestDrop=next;bestR=r} } const diameterMm=(measurementMode==='clear_zone_outside_disc' ? Math.max(0,(bestR*2-discPx)/pixelsPerMm) : bestR*2/pixelsPerMm); const confidence=Math.max(.35,Math.min(.9,d.contrast/80)); return {id:index+1,antibiotic:'UNKNOWN',zoneDiameterMm:Number(diameterMm.toFixed(1)),zoneRadiusMm:Number((diameterMm/2).toFixed(1)),discRadiusPx:discPx/2,zoneRadiusPx:bestR,discCenter:[d.x,d.y],x:d.x/width*100,y:d.y/height*100,confidence,reviewRequired:true,corrected:false} })
+  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:measured, calibration:{method:'configured_reference_disc',knownDiscDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${video.videoWidth} × ${video.videoHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline' }
+}
+
 function App() {
   const [state, setState] = useState(STATES.READY)
   const [result, setResult] = useState(null)
@@ -110,7 +132,7 @@ function App() {
     if (isBusy || state===STATES.ID) return
     if (cameraOn) { captureReferenceFrame(); return }
     setResult(null); setState(STATES.DETECTED)
-    timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ setResult({...analyzePlate({measurementMode}), captureSource:automatic?'webcam':'demo'}); setState(STATES.RESULT) }, 900) }, 750) }, 500)
+    timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ const analysis=analyzeCapturedFrame(videoRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setCaptureNotice(analysis.message);setState(STATES.READY)} }, 900) }, 750) }, 500)
   }
   const saveResult = () => {
     const clean = sampleId.trim()
