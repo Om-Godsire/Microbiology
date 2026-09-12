@@ -14,6 +14,7 @@ A camera-first microbiology laboratory workflow prototype for measuring antibiot
 - Lightweight operator flow: scan → measurement → Patient/Sample ID → save → ready
 - Recent local results list and synchronization status placeholder
 - Explicitly measurement-only: it does not diagnose, prescribe, or classify susceptibility
+- Supplied reference-plate ground truth fixture in `data/reference-plate-001.measurements.json`
 
 ## Run locally
 

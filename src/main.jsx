@@ -5,12 +5,16 @@ import './styles.css'
 
 const STATES = { READY:'READY', DETECTED:'PLATE_DETECTED', STABILIZING:'STABILIZING', ANALYZING:'ANALYZING', RESULT:'RESULT_READY', ID:'WAITING_FOR_ID', SAVING:'SAVING' }
 const demoDiscs = [
-  { antibiotic:'CIP', zone:28.4, confidence:.98, x:31, y:34, r:8 },
-  { antibiotic:'GEN', zone:17.8, confidence:.94, x:60, y:28, r:7 },
-  { antibiotic:'AMX', zone:21.2, confidence:.91, x:70, y:54, r:7 },
-  { antibiotic:'TET', zone:12.0, confidence:.72, x:48, y:69, r:7 },
-  { antibiotic:'CRO', zone:31.4, confidence:.97, x:28, y:62, r:8 },
-  { antibiotic:'AMP', zone:8.6, confidence:.86, x:54, y:46, r:6 },
+  { antibiotic:'MRP', zone:30, confidence:.97, x:31, y:24, r:8 },
+  { antibiotic:'AZM', zone:28, confidence:.96, x:54, y:17, r:8 },
+  { antibiotic:'LZ', zone:0, confidence:.93, x:82, y:31, r:7 },
+  { antibiotic:'IPM', zone:24, confidence:.95, x:89, y:61, r:8 },
+  { antibiotic:'AMC', zone:0, confidence:.88, x:72, y:82, r:7 },
+  { antibiotic:'VA', zone:0, confidence:.84, x:50, y:90, r:7 },
+  { antibiotic:'A/S', zone:22, confidence:.92, x:26, y:79, r:8 },
+  { antibiotic:'NIT', zone:18, confidence:.94, x:10, y:58, r:8 },
+  { antibiotic:'IE', zone:24, confidence:.90, x:48, y:46, r:7 },
+  { antibiotic:'CD', zone:14, confidence:.89, x:58, y:60, r:7 },
 ]
 
 function analyzePlate({ measurementMode='full_zone_diameter', pixelsPerMm=4.8 }={}) {

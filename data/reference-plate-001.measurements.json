@@ -1,0 +1,24 @@
+{
+  "id": "reference-plate-001",
+  "sourceImage": "reference-plate-001.png",
+  "measurementUnit": "mm",
+  "measurementTarget": "full_patch_diameter",
+  "notes": "Manual reference readings supplied by the laboratory operator. Zero means no measurable inhibition patch was recorded.",
+  "measurements": [
+    { "label": "MRP", "diameterMm": 30 },
+    { "label": "AZM", "diameterMm": 28 },
+    { "label": "LZ",  "diameterMm": 0 },
+    { "label": "IPM", "diameterMm": 24 },
+    { "label": "AMC", "diameterMm": 0 },
+    { "label": "VA",  "diameterMm": 0 },
+    { "label": "A/S", "diameterMm": 22 },
+    { "label": "NIT", "diameterMm": 18 },
+    { "label": "IE",  "diameterMm": 24 },
+    { "label": "CD",  "diameterMm": 14 }
+  ],
+  "validationRules": {
+    "absoluteToleranceMm": 2,
+    "zeroMeans": "no measurable inhibition patch recorded",
+    "identitySource": "operator-supplied label; do not infer from diameter"
+  }
+}
