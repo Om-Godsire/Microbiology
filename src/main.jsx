@@ -25,6 +25,7 @@ function analyzePlate({ measurementMode='full_zone_diameter', pixelsPerMm=4.8 }=
 }
 
 function getSaved() { try { return JSON.parse(localStorage.getItem('microscan-results') || '[]') } catch { return [] } }
+function getCaptureCount() { try { return Number(localStorage.getItem('microscan-capture-count') || 0) } catch { return 0 } }
 function pct(value) { return `${Math.round(value*100)}%` }
 
 function inspectLiveFrame(video, canvas) {
@@ -52,6 +53,8 @@ function App() {
   const [measurementMode, setMeasurementMode] = useState('full_zone_diameter')
   const [showSettings, setShowSettings] = useState(false)
   const [liveMetrics, setLiveMetrics] = useState({ present:false, quality:'Waiting for camera…', brightness:0, stability:0 })
+  const [captureCount, setCaptureCount] = useState(getCaptureCount)
+  const [captureNotice, setCaptureNotice] = useState('')
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
@@ -89,8 +92,23 @@ function App() {
   }
   const stopCamera = () => { streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current=null; setCameraOn(false) }
 
+  const captureReferenceFrame = () => {
+    const video = videoRef.current
+    if (!video || video.readyState < 2 || !video.videoWidth) { setCameraError('No live frame is available yet. Keep the camera active and try again.'); return false }
+    const canvas = document.createElement('canvas'); canvas.width=video.videoWidth; canvas.height=video.videoHeight
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+    const nextCount = captureCount + 1
+    try {
+      localStorage.setItem('microscan-last-frame', JSON.stringify({ capturedAt:new Date().toISOString(), width:canvas.width, height:canvas.height, image:canvas.toDataURL('image/jpeg', .82), metrics:liveMetrics }))
+      localStorage.setItem('microscan-capture-count', String(nextCount))
+    } catch { setCameraError('Frame captured but local storage is full. Export or clear saved captures before continuing.'); return false }
+    setCaptureCount(nextCount); setCaptureNotice(`Reference frame ${nextCount} captured locally. Actual CV measurement is the next pipeline milestone.`); setState(STATES.READY)
+    return true
+  }
+
   const runScan = (automatic=false) => {
     if (isBusy || state===STATES.ID) return
+    if (cameraOn) { captureReferenceFrame(); return }
     setResult(null); setState(STATES.DETECTED)
     timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ setResult({...analyzePlate({measurementMode}), captureSource:automatic?'webcam':'demo'}); setState(STATES.RESULT) }, 900) }, 750) }, 500)
   }
@@ -111,6 +129,7 @@ function App() {
     </header>
     <main className="workspace">
       <section className="hero-row"><div><div className="eyebrow"><span className="live-dot"/> CONTINUOUS SCANNER</div><h1>Plate analysis <em>station</em></h1><p className="subtitle">Place a Petri dish in view. Measurement begins automatically.</p></div><div className="session-card"><div className="session-label">CURRENT SESSION</div><div className="session-value"><span className="session-dot"/> Operator / Lab 01</div></div></section>
+      {captureNotice && <div className="notice capture-notice"><Check size={15}/>{captureNotice}<button onClick={()=>setCaptureNotice('')}><X size={14}/></button></div>}
       <section className="main-grid">
         <div className="scanner-panel">
           <div className="panel-heading"><div><span className="panel-kicker">LIVE FEED</span><h2>Camera preview</h2></div><div className="camera-actions"><span className={`camera-state ${cameraOn?'active':''}`}><span/> {cameraOn?'CAMERA ACTIVE':'DEMO MODE'}</span><button className="small-btn" onClick={cameraOn?stopCamera:startCamera}><Camera size={15}/>{cameraOn?'Stop camera':'Enable camera'}</button></div></div>
@@ -122,7 +141,7 @@ function App() {
           </div>
           {cameraError && <div className="notice warning"><X size={15}/>{cameraError}</div>}
           <div className="status-strip"><div className="status-icon"><Activity size={18}/></div><div><span className="status-label">SCANNER STATUS</span><strong>{status}</strong><small className="live-quality">{cameraOn ? `${liveMetrics.quality} · stability ${liveMetrics.stability}%` : 'Demo mode · manual trigger available'}</small></div><div className="status-time">{isBusy ? 'PROCESSING' : state===STATES.READY?'READY':'ACTION REQUIRED'}</div></div>
-          <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={()=>runScan(false)}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> {cameraOn?'Manual capture':'Run demo measurement'}</>}</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
+          <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={()=>runScan(false)}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> {cameraOn?'Capture reference frame':'Run demo measurement'}</>}</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
         </div>
         <aside className="side-panel">
           <div className="side-heading"><div><span className="panel-kicker">ANALYSIS OUTPUT</span><h2>Latest result</h2></div><span className={`confidence-badge ${result?.valid?'good':''}`}>{result ? `${result.discs.length} ZONES` : 'WAITING'}</span></div>
@@ -136,7 +155,7 @@ function App() {
       </section>
       <section className="lower-grid">
         <div className="info-card"><div className="card-title"><span className="panel-kicker">WORKFLOW</span><h3>Hands-free scanning</h3></div><div className="workflow"><span className="step done"><i>01</i><b>DETECT</b><small>Plate in view</small></span><span className="line done"/><span className={`step ${state===STATES.STABILIZING?'current':result?'done':''}`}><i>02</i><b>MEASURE</b><small>All zones at once</small></span><span className="line"/><span className={`step ${state===STATES.ID||state===STATES.SAVING?'current':state===STATES.READY&&results.length?'done':''}`}><i>03</i><b>SAVE</b><small>ID then continue</small></span></div></div>
-        <div className="info-card system-card"><div className="card-title"><span className="panel-kicker">LOCAL-FIRST SYSTEM</span><h3>Sync health</h3></div><div className="health-row"><div className="health-item"><Database size={17}/><span>Local storage<strong>Ready</strong></span></div><div className="health-item"><Cloud size={17}/><span>Background sync<strong>Standby</strong></span></div><div className="health-item"><ShieldCheck size={17}/><span>Data protection<strong>Enabled</strong></span></div></div></div>
+        <div className="info-card system-card"><div className="card-title"><span className="panel-kicker">LOCAL-FIRST SYSTEM</span><h3>Sync health</h3></div><div className="health-row"><div className="health-item"><Database size={17}/><span>Local storage<strong>Ready</strong></span></div><div className="health-item"><Cloud size={17}/><span>Background sync<strong>Standby</strong></span></div><div className="health-item"><ShieldCheck size={17}/><span>Reference frames<strong>{captureCount} captured</strong></span></div></div></div>
       </section>
       <section className="history-section"><div className="history-heading"><div><span className="panel-kicker">LOCAL HISTORY</span><h2>Recent measurements</h2></div><span className="muted">{results.length} saved locally</span></div>{results.length===0?<div className="history-empty"><Clock3 size={17}/> Saved plates will appear here after the first scan.</div>:<div className="history-list">{results.slice(0,4).map(r=><div className="history-row" key={r.id}><span className="history-check"><Check size={15}/></span><strong>{r.sampleId}</strong><span>{r.discs.length} zones</span><span>{new Date(r.savedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span><em>Saved locally</em></div>)}</div>}</section>
       <footer><span><LockKeyhole size={13}/> Measurement support tool · Not a diagnostic system</span><span>v0.1 MVP · <a href="https://github.com/Om-Godsire/Microbiology" target="_blank">Repository</a></span></footer>
