@@ -67,7 +67,9 @@ function analyzeCapturedFrame(source, { measurementMode='full_zone_diameter', kn
   if(discs.length===0) return { ok:false, message:'Petri dish detected, but no antibiotic discs were confidently detected.' }
   const discPx=12; const pixelsPerMm=discPx/knownDiscDiameterMm
   const measured=discs.map((d,index)=>{ let bestR=discPx*1.4; let bestDrop=0; for(let r=discPx*1.4;r<Math.min(edgeRadius*.32,discPx*5);r+=2){ let ring=0,n=0; for(let a=0;a<Math.PI*2;a+=Math.PI/18){ const x=Math.max(0,Math.min(width-1,Math.round(d.x+Math.cos(a)*r))),y=Math.max(0,Math.min(height-1,Math.round(d.y+Math.sin(a)*r))); ring+=gray[y*width+x];n++ } const next=ring/n; if(next>bestDrop){bestDrop=next;bestR=r} } const diameterMm=(measurementMode==='clear_zone_outside_disc' ? Math.max(0,(bestR*2-discPx)/pixelsPerMm) : bestR*2/pixelsPerMm); const confidence=Math.max(.35,Math.min(.9,d.contrast/80)); return {id:index+1,antibiotic:'UNKNOWN',zoneDiameterMm:Number(diameterMm.toFixed(1)),zoneRadiusMm:Number((diameterMm/2).toFixed(1)),discRadiusPx:discPx/2,zoneRadiusPx:bestR,discCenter:[d.x,d.y],x:d.x/width*100,y:d.y/height*100,confidence,reviewRequired:true,corrected:false} })
-  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:measured, calibration:{method:'configured_reference_disc',knownDiscDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${sourceWidth} × ${sourceHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline' }
+  const plausible=measured.filter(d=>d.confidence>=.65 && d.zoneRadiusPx>=discPx*1.25 && d.zoneRadiusPx<=discPx*3.5)
+  if (plausible.length<3) return { ok:false, message:'Plate-like region found, but disc and inhibition-zone boundaries are not reliable enough to measure. Use diffuse lighting, a top-down view, and a closer image.' }
+  return { ok:true, id:`plate-${Date.now()}`, capturedAt:new Date().toISOString(), plate:{center:[cx,cy],radiusPx:edgeRadius,confidence:Math.min(.9,.45+edgeScore/40)}, discs:plausible, calibration:{method:'configured_reference_disc',knownDiscDiameterMm,pixelsPerMm:Number(pixelsPerMm.toFixed(2)),resolution:`${sourceWidth} × ${sourceHeight}`}, measurementMode,durationMs:0,valid:false,source:'classical_cv_baseline' }
 }
 
 function App() {
@@ -85,6 +87,7 @@ function App() {
   const [captureNotice, setCaptureNotice] = useState('')
   const videoRef = useRef(null)
   const imageRef = useRef(null)
+  const viewfinderRef = useRef(null)
   const fileRef = useRef(null)
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
@@ -157,7 +160,14 @@ function App() {
     const next=[record,...results].slice(0,20); localStorage.setItem('microscan-results',JSON.stringify(next)); setResults(next)
     setTimeout(()=>{ setSampleId(''); setResult(null); setState(STATES.READY) }, 900)
   }
-  const reset = () => { setResult(null); setSampleId(''); setState(STATES.READY) }
+  const reset = () => { setResult(null); setSampleId(''); setCaptureNotice(''); setState(STATES.READY) }
+  const overlayPoint = (disc) => {
+    const frame=viewfinderRef.current; const source=imageRef.current
+    if (!frame || !source?.naturalWidth) return {left:`${disc.x}%`,top:`${disc.y}%`}
+    const frameRatio=frame.clientWidth/frame.clientHeight; const imageRatio=source.naturalWidth/source.naturalHeight
+    const imageWidthRatio=Math.min(1,imageRatio/frameRatio)
+    return {left:`${50+(disc.x-50)*imageWidthRatio}%`,top:`${disc.y}%`}
+  }
 
   return <div className="app-shell">
     <header className="topbar">
@@ -170,10 +180,10 @@ function App() {
       <section className="main-grid">
         <div className="scanner-panel">
           <div className="panel-heading"><div><span className="panel-kicker">LIVE FEED</span><h2>Camera preview</h2></div><div className="camera-actions"><span className={`camera-state ${cameraOn?'active':''}`}><span/> {cameraOn?'CAMERA ACTIVE':'DEMO MODE'}</span><button className="small-btn" onClick={cameraOn?stopCamera:startCamera}><Camera size={15}/>{cameraOn?'Stop camera':'Enable camera'}</button></div></div>
-          <div className="viewfinder" onClick={runScan}>
+          <div className="viewfinder" ref={viewfinderRef} onClick={runScan}>
             <video ref={videoRef} autoPlay muted playsInline className={cameraOn?'video-visible':''}/>{imageSrc && <img ref={imageRef} src={imageSrc} className="uploaded-image" alt="Uploaded Petri dish reference"/>}<div className="feed-placeholder"><div className="grid-lines"/><div className="dish-guide"><div className="guide-ring"/><span>{imageSrc?'REFERENCE IMAGE LOADED':'PLACE PETRI DISH'}<br/><small>{imageSrc?'ready for analysis':'inside the guide'}</small></span></div></div>
             <div className="corner tl"/><div className="corner tr"/><div className="corner bl"/><div className="corner br"/>
-            {result && <div className="overlay-plate"><div className="overlay-circle"/>{result.discs.map(d=><div key={d.id} className="disc-overlay" style={{left:`${d.x}%`,top:`${d.y}%`}}><span>{d.zoneDiameterMm} mm</span></div>)}</div>}
+            {result && <div className="overlay-plate"><div className="overlay-circle"/>{result.discs.filter(d=>d.confidence>=.65).map(d=><div key={d.id} className="disc-overlay" style={overlayPoint(d)}><span>{d.zoneDiameterMm} mm</span></div>)}</div>}
             <canvas ref={canvasRef} className="analysis-canvas"/><div className="feed-caption"><span><Maximize2 size={13}/> 1280 × 720</span><span><Activity size={13}/> 24 FPS</span></div>
           </div>
           {cameraError && <div className="notice warning"><X size={15}/>{cameraError}</div>}
