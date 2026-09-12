@@ -3,3 +3,4 @@
 .analysis-canvas{display:none}.live-quality{display:block;color:#769187;font:500 9px 'DM Mono';margin-top:4px}
 .capture-notice{margin:0 0 18px;color:var(--teal);background:#6ce2b410;border-color:#396657}.capture-notice button{margin-left:auto;border:0;background:none;color:var(--muted);cursor:pointer;display:flex}
 .uploaded-image{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#07100e;z-index:2}.uploaded-image+.feed-placeholder{display:none}
+.status-error{border-color:#7a443d;background:#2a1c1a}.status-error .status-icon{color:var(--amber);background:#f7bd6514}.status-error strong{color:#ffb19a}.status-error .live-quality{color:#e29b7e;max-width:430px;line-height:1.45}

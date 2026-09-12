@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Activity, Camera, Check, ChevronDown, CircleHelp, Clock3, Cloud, Cpu, Database, Eye, FlaskConical, Gauge, LockKeyhole, Maximize2, RefreshCw, Settings2, ShieldCheck, Wifi, X } from 'lucide-react'
 import './styles.css'
 
-const STATES = { READY:'READY', DETECTED:'PLATE_DETECTED', STABILIZING:'STABILIZING', ANALYZING:'ANALYZING', RESULT:'RESULT_READY', ID:'WAITING_FOR_ID', SAVING:'SAVING' }
+const STATES = { READY:'READY', DETECTED:'PLATE_DETECTED', STABILIZING:'STABILIZING', ANALYZING:'ANALYZING', RESULT:'RESULT_READY', ID:'WAITING_FOR_ID', SAVING:'SAVING', ERROR:'ANALYSIS_ERROR' }
 const demoDiscs = [
   { antibiotic:'MRP', zone:30, confidence:.97, x:31, y:24, r:8 },
   { antibiotic:'AZM', zone:28, confidence:.96, x:54, y:17, r:8 },
@@ -92,6 +92,7 @@ function App() {
   const [liveMetrics, setLiveMetrics] = useState({ present:false, quality:'Waiting for camera…', brightness:0, stability:0 })
   const [captureCount, setCaptureCount] = useState(getCaptureCount)
   const [captureNotice, setCaptureNotice] = useState('')
+  const [analysisError, setAnalysisError] = useState('')
   const videoRef = useRef(null)
   const imageRef = useRef(null)
   const viewfinderRef = useRef(null)
@@ -103,7 +104,7 @@ function App() {
   const stableFramesRef = useRef(0)
 
   const isBusy = [STATES.DETECTED,STATES.STABILIZING,STATES.ANALYZING,STATES.SAVING].includes(state)
-  const status = useMemo(() => ({ [STATES.READY]:'Looking for plate…', [STATES.DETECTED]:'Plate detected', [STATES.STABILIZING]:'Hold steady…', [STATES.ANALYZING]:'Measuring all zones…', [STATES.RESULT]:'Measurement complete', [STATES.ID]:'Patient / Sample ID required', [STATES.SAVING]:'Saved · syncing in background' }[state]), [state])
+  const status = useMemo(() => ({ [STATES.READY]:'Looking for plate…', [STATES.DETECTED]:'Plate detected', [STATES.STABILIZING]:'Hold steady…', [STATES.ANALYZING]:'Measuring all zones…', [STATES.RESULT]:'Measurement complete', [STATES.ID]:'Patient / Sample ID required', [STATES.SAVING]:'Saved · syncing in background', [STATES.ERROR]:'Analysis could not be completed' }[state]), [state])
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); if (frameLoopRef.current) cancelAnimationFrame(frameLoopRef.current); streamRef.current?.getTracks().forEach(t=>t.stop()) }, [])
 
@@ -155,9 +156,9 @@ function App() {
   const runScan = (automatic=false) => {
     if (isBusy || state===STATES.ID) return
     if (cameraOn) { captureReferenceFrame(); return }
-    if (imageSrc) { setResult(null); setState(STATES.DETECTED); timerRef.current=setTimeout(()=>{setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{const analysis=analyzeCapturedFrame(imageRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setCaptureNotice(analysis.message);setState(STATES.READY)}},900)},500); return }
+    if (imageSrc) { setResult(null); setAnalysisError(''); setState(STATES.DETECTED); timerRef.current=setTimeout(()=>{setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{const analysis=analyzeCapturedFrame(imageRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setAnalysisError(analysis.message);setCaptureNotice(analysis.message);setState(STATES.ERROR)}},900)},500); return }
     setResult(null); setState(STATES.DETECTED)
-    timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ const analysis=analyzeCapturedFrame(videoRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setCaptureNotice(analysis.message);setState(STATES.READY)} }, 900) }, 750) }, 500)
+    timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ const analysis=analyzeCapturedFrame(videoRef.current,{measurementMode}); if(analysis.ok){setResult(analysis);setState(STATES.RESULT)} else {setAnalysisError(analysis.message);setCaptureNotice(analysis.message);setState(STATES.ERROR)} }, 900) }, 750) }, 500)
   }
   const saveResult = () => {
     const clean = sampleId.trim()
@@ -167,7 +168,7 @@ function App() {
     const next=[record,...results].slice(0,20); localStorage.setItem('microscan-results',JSON.stringify(next)); setResults(next)
     setTimeout(()=>{ setSampleId(''); setResult(null); setState(STATES.READY) }, 900)
   }
-  const reset = () => { setResult(null); setSampleId(''); setCaptureNotice(''); setState(STATES.READY) }
+  const reset = () => { setResult(null); setSampleId(''); setCaptureNotice(''); setAnalysisError(''); setState(STATES.READY) }
   const overlayPoint = (disc) => {
     const frame=viewfinderRef.current; const source=imageRef.current
     if (!frame || !source?.naturalWidth) return {left:`${disc.x}%`,top:`${disc.y}%`}
@@ -194,7 +195,7 @@ function App() {
             <canvas ref={canvasRef} className="analysis-canvas"/><div className="feed-caption"><span><Maximize2 size={13}/> 1280 × 720</span><span><Activity size={13}/> 24 FPS</span></div>
           </div>
           {cameraError && <div className="notice warning"><X size={15}/>{cameraError}</div>}
-          <div className="status-strip"><div className="status-icon"><Activity size={18}/></div><div><span className="status-label">SCANNER STATUS</span><strong>{status}</strong><small className="live-quality">{cameraOn ? `${liveMetrics.quality} · stability ${liveMetrics.stability}%` : 'Demo mode · manual trigger available'}</small></div><div className="status-time">{isBusy ? 'PROCESSING' : state===STATES.READY?'READY':'ACTION REQUIRED'}</div></div>
+          <div className={`status-strip ${state===STATES.ERROR?'status-error':''}`}><div className="status-icon"><Activity size={18}/></div><div><span className="status-label">SCANNER STATUS</span><strong>{status}</strong><small className="live-quality">{state===STATES.ERROR ? analysisError : cameraOn ? `${liveMetrics.quality} · stability ${liveMetrics.stability}%` : 'Demo mode · manual trigger available'}</small></div><div className="status-time">{isBusy ? 'PROCESSING' : state===STATES.READY?'READY':state===STATES.ERROR?'RETRY':'ACTION REQUIRED'}</div></div>
           <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={()=>runScan(false)}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> {cameraOn?'Capture reference frame':imageSrc?'Analyze image':'Run demo measurement'}</>}</button><input ref={fileRef} type="file" accept="image/png,image/jpeg" onChange={uploadReference} hidden/><button className="ghost-btn" onClick={()=>fileRef.current?.click()}><Database size={15}/> Upload image</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
         </div>
         <aside className="side-panel">
