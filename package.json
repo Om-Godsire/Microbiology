@@ -1,19 +1,29 @@
 {
-  "name": "microbiology-scanner",
+  "name": "microscan-lab",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "start": "concurrently \"npm run server\" \"npm run dev\""
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "date-fns": "latest",
+    "jspdf": "latest",
+    "jspdf-autotable": "latest",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest"
+    "react-router-dom": "latest",
+    "socket.io-client": "latest",
+    "vite": "latest",
+    "zustand": "latest"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
 }

@@ -4,3 +4,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# YOLO Dataset
+data/yolo_dataset/
