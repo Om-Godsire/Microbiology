@@ -27,6 +27,21 @@ function analyzePlate({ measurementMode='full_zone_diameter', pixelsPerMm=4.8 }=
 function getSaved() { try { return JSON.parse(localStorage.getItem('microscan-results') || '[]') } catch { return [] } }
 function pct(value) { return `${Math.round(value*100)}%` }
 
+function inspectLiveFrame(video, canvas) {
+  if (!video || video.readyState < 2 || !video.videoWidth) return { present:false, quality:'Waiting for camera…', brightness:0, stability:0 }
+  canvas.width = 160; canvas.height = 90
+  const ctx = canvas.getContext('2d', { willReadFrequently:true })
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+  const pixels = ctx.getImageData(24, 10, 112, 70).data
+  let sum = 0, variance = 0
+  for (let i=0; i<pixels.length; i+=4) sum += (pixels[i]*.299 + pixels[i+1]*.587 + pixels[i+2]*.114)
+  const count = pixels.length / 4; const brightness = sum / count
+  for (let i=0; i<pixels.length; i+=4) { const l=pixels[i]*.299 + pixels[i+1]*.587 + pixels[i+2]*.114; variance += (l-brightness)**2 }
+  const texture = Math.sqrt(variance / count)
+  const present = brightness > 28 && brightness < 235 && texture > 8
+  return { present, quality:present?'Plate region detected':'Center the plate in the guide', brightness:Math.round(brightness), stability:Math.min(100, Math.round(texture*2.2)) }
+}
+
 function App() {
   const [state, setState] = useState(STATES.READY)
   const [result, setResult] = useState(null)
@@ -36,29 +51,48 @@ function App() {
   const [cameraError, setCameraError] = useState('')
   const [measurementMode, setMeasurementMode] = useState('full_zone_diameter')
   const [showSettings, setShowSettings] = useState(false)
+  const [liveMetrics, setLiveMetrics] = useState({ present:false, quality:'Waiting for camera…', brightness:0, stability:0 })
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const timerRef = useRef(null)
+  const frameLoopRef = useRef(null)
+  const stableFramesRef = useRef(0)
 
   const isBusy = [STATES.DETECTED,STATES.STABILIZING,STATES.ANALYZING,STATES.SAVING].includes(state)
   const status = useMemo(() => ({ [STATES.READY]:'Looking for plate…', [STATES.DETECTED]:'Plate detected', [STATES.STABILIZING]:'Hold steady…', [STATES.ANALYZING]:'Measuring all zones…', [STATES.RESULT]:'Measurement complete', [STATES.ID]:'Patient / Sample ID required', [STATES.SAVING]:'Saved · syncing in background' }[state]), [state])
 
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); streamRef.current?.getTracks().forEach(t=>t.stop()) }, [])
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); if (frameLoopRef.current) cancelAnimationFrame(frameLoopRef.current); streamRef.current?.getTracks().forEach(t=>t.stop()) }, [])
+
+  useEffect(() => {
+    if (!cameraOn) { setLiveMetrics({ present:false, quality:'Demo mode ready', brightness:0, stability:0 }); return }
+    const sample = () => {
+      const metrics = inspectLiveFrame(videoRef.current, canvasRef.current)
+      setLiveMetrics(metrics)
+      if (metrics.present && state === STATES.READY) {
+        stableFramesRef.current += 1
+        if (stableFramesRef.current >= 18) { stableFramesRef.current = 0; runScan(true) }
+      } else if (!metrics.present) stableFramesRef.current = 0
+      frameLoopRef.current = requestAnimationFrame(sample)
+    }
+    frameLoopRef.current = requestAnimationFrame(sample)
+    return () => { if (frameLoopRef.current) cancelAnimationFrame(frameLoopRef.current) }
+  }, [cameraOn, state])
 
   const startCamera = async () => {
     setCameraError('')
     if (!navigator.mediaDevices?.getUserMedia) { setCameraError('Live camera is not available in this browser. Demo mode remains active.'); return }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }, audio:false })
-      streamRef.current = stream; setCameraOn(true); if (videoRef.current) videoRef.current.srcObject = stream
+      streamRef.current = stream; setCameraOn(true); if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(()=>{}) }
     } catch { setCameraError('Camera permission unavailable. Reconnect the camera or use demo mode.') }
   }
   const stopCamera = () => { streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current=null; setCameraOn(false) }
 
-  const runScan = () => {
+  const runScan = (automatic=false) => {
     if (isBusy || state===STATES.ID) return
     setResult(null); setState(STATES.DETECTED)
-    timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ setResult(analyzePlate({measurementMode})); setState(STATES.RESULT) }, 900) }, 750) }, 500)
+    timerRef.current=setTimeout(()=>{ setState(STATES.STABILIZING); timerRef.current=setTimeout(()=>{ setState(STATES.ANALYZING); timerRef.current=setTimeout(()=>{ setResult({...analyzePlate({measurementMode}), captureSource:automatic?'webcam':'demo'}); setState(STATES.RESULT) }, 900) }, 750) }, 500)
   }
   const saveResult = () => {
     const clean = sampleId.trim()
@@ -84,11 +118,11 @@ function App() {
             <video ref={videoRef} autoPlay muted playsInline className={cameraOn?'video-visible':''}/><div className="feed-placeholder"><div className="grid-lines"/><div className="dish-guide"><div className="guide-ring"/><span>PLACE PETRI DISH<br/><small>inside the guide</small></span></div></div>
             <div className="corner tl"/><div className="corner tr"/><div className="corner bl"/><div className="corner br"/>
             {result && <div className="overlay-plate"><div className="overlay-circle"/>{result.discs.map(d=><div key={d.id} className="disc-overlay" style={{left:`${d.x}%`,top:`${d.y}%`}}><span>{d.zoneDiameterMm} mm</span></div>)}</div>}
-            <div className="feed-caption"><span><Maximize2 size={13}/> 1280 × 720</span><span><Activity size={13}/> 24 FPS</span></div>
+            <canvas ref={canvasRef} className="analysis-canvas"/><div className="feed-caption"><span><Maximize2 size={13}/> 1280 × 720</span><span><Activity size={13}/> 24 FPS</span></div>
           </div>
           {cameraError && <div className="notice warning"><X size={15}/>{cameraError}</div>}
-          <div className="status-strip"><div className="status-icon"><Activity size={18}/></div><div><span className="status-label">SCANNER STATUS</span><strong>{status}</strong></div><div className="status-time">{isBusy ? 'PROCESSING' : state===STATES.READY?'READY':'ACTION REQUIRED'}</div></div>
-          <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={runScan}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> Simulate plate detection</>}</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
+          <div className="status-strip"><div className="status-icon"><Activity size={18}/></div><div><span className="status-label">SCANNER STATUS</span><strong>{status}</strong><small className="live-quality">{cameraOn ? `${liveMetrics.quality} · stability ${liveMetrics.stability}%` : 'Demo mode · manual trigger available'}</small></div><div className="status-time">{isBusy ? 'PROCESSING' : state===STATES.READY?'READY':'ACTION REQUIRED'}</div></div>
+          <div className="scan-actions"><button className="primary-btn" disabled={isBusy || state===STATES.ID} onClick={()=>runScan(false)}>{isBusy?<><RefreshCw className="spin" size={17}/> Processing…</>:<><Eye size={17}/> {cameraOn?'Manual capture':'Run demo measurement'}</>}</button>{state!==STATES.READY && <button className="ghost-btn" onClick={reset}>Reset</button>}</div>
         </div>
         <aside className="side-panel">
           <div className="side-heading"><div><span className="panel-kicker">ANALYSIS OUTPUT</span><h2>Latest result</h2></div><span className={`confidence-badge ${result?.valid?'good':''}`}>{result ? `${result.discs.length} ZONES` : 'WAITING'}</span></div>
